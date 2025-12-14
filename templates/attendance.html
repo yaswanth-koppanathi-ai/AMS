@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mark Attendance - Attendance System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            padding: 40px;
+            max-width: 700px;
+            width: 100%;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .back-btn {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #667eea;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .back-btn:hover {
+            text-decoration: underline;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            transform: scale(1.02);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .video-container {
+            width: 100%;
+            max-width: 500px;
+            margin: 20px auto;
+            border-radius: 10px;
+            overflow: hidden;
+            display: none;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+        }
+
+        video {
+            width: 100%;
+            display: block;
+        }
+
+        .message {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .results {
+            margin-top: 20px;
+            display: none;
+        }
+
+        .student-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .student-card h3 {
+            color: #333;
+            margin-bottom: 5px;
+        }
+
+        .student-card p {
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 5px;
+            font-size: 0.85em;
+            font-weight: 600;
+            margin-top: 5px;
+        }
+
+        .status-present {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-already {
+            background: #fff3cd;
+            color: #856404;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <a href="/" class="back-btn">← Back to Home</a>
+        <h1>Mark Attendance</h1>
+        
+        <div id="message" class="message"></div>
+        
+        <div class="video-container" id="videoContainer">
+            <video id="video" autoplay></video>
+        </div>
+        
+        <button class="btn" id="markBtn">Mark Attendance</button>
+        
+        <div class="results" id="results"></div>
+    </div>
+
+    <script>
+        const markBtn = document.getElementById('markBtn');
+        const messageDiv = document.getElementById('message');
+        const videoContainer = document.getElementById('videoContainer');
+        const video = document.getElementById('video');
+        const resultsDiv = document.getElementById('results');
+
+        function showMessage(text, isError = false) {
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${isError ? 'error' : 'success'}`;
+            messageDiv.style.display = 'block';
+        }
+
+        function showResults(students) {
+            resultsDiv.innerHTML = '<h2 style="margin-bottom: 15px; color: #333;">Attendance Results:</h2>';
+            students.forEach(student => {
+                const card = document.createElement('div');
+                card.className = 'student-card';
+                card.innerHTML = `
+                    <h3>${student.name}</h3>
+                    <p>Student ID: ${student.student_id}</p>
+                    <span class="status-badge status-${student.status === 'Present' ? 'present' : 'already'}">
+                        ${student.status}
+                    </span>
+                `;
+                resultsDiv.appendChild(card);
+            });
+            resultsDiv.style.display = 'block';
+        }
+
+        markBtn.addEventListener('click', async () => {
+            markBtn.disabled = true;
+            markBtn.textContent = 'Processing...';
+            resultsDiv.style.display = 'none';
+            
+            try {
+                // Access webcam
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                videoContainer.style.display = 'block';
+                
+                // Wait for video to be ready and allow camera to focus
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        video.play();
+                        setTimeout(resolve, 1500); // Give camera time to focus and stabilize
+                    };
+                });
+                
+                // Stop the stream BEFORE backend tries to access camera
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    track.enabled = false;
+                });
+                video.srcObject = null;
+                videoContainer.style.display = 'none';
+                
+                // Wait a bit more to ensure camera is fully released
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // Now call backend to capture
+                const response = await fetch('/api/mark_attendance', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showMessage(data.message, false);
+                    if (data.students) {
+                        showResults(data.students);
+                    }
+                } else {
+                    showMessage(data.message, true);
+                }
+            } catch (error) {
+                showMessage('Error: ' + error.message, true);
+            } finally {
+                markBtn.disabled = false;
+                markBtn.textContent = 'Mark Attendance';
+            }
+        });
+    </script>
+</body>
+</html>
+
