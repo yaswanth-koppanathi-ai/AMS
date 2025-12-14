@@ -10,6 +10,9 @@ A comprehensive attendance management system that uses face recognition technolo
 - **Web Interface**: Beautiful, modern web UI built with Flask
 - **Attendance Records**: View attendance history by date
 - **Student Registration**: Easy registration process to add new students to the system
+- **Smart Camera Detection**: Automatically detects and uses available cameras (supports multiple camera indices)
+- **Robust Error Handling**: Retry logic and graceful error messages for camera access issues
+- **Graceful Degradation**: Application runs even without face_recognition module installed (with clear error messages)
 
 ## 🛠️ Technology Stack
 
@@ -24,27 +27,45 @@ A comprehensive attendance management system that uses face recognition technolo
 - Python 3.8 or higher
 - Webcam/Camera access
 - pip (Python package manager)
+- **CMake** (required for installing face-recognition library on Windows)
+- **Visual Studio Build Tools with C++** (required for building dlib dependency on Windows)
 
 ## 📦 Installation
 
 1. **Clone or download this repository**
 
-2. **Install dependencies**:
+2. **Create a virtual environment** (recommended):
+   ```bash
+   python -m venv .venv
+   .venv\Scripts\activate  # On Windows
+   # or
+   source .venv/bin/activate  # On Linux/Mac
+   ```
+
+3. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-   Note: If you encounter issues installing `face-recognition` on Windows, you may need to install Visual C++ Build Tools or use pre-compiled wheels.
+   **Important Notes:**
+   - The application will run even if `face-recognition` is not installed, but face recognition features will be disabled
+   - To enable face recognition on Windows, you need:
+     1. **Install CMake**: Download from [cmake.org](https://cmake.org/download/) and add to PATH during installation
+     2. **Install Visual Studio Build Tools**: Download from [Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/) and select "Desktop development with C++" workload
+     3. Restart your terminal after installing
+     4. Then run: `pip install face-recognition`
 
-3. **Run the application**:
+4. **Run the application**:
    ```bash
    python app.py
    ```
 
-4. **Open your browser** and navigate to:
+5. **Open your browser** and navigate to:
    ```
    http://localhost:5000
    ```
+
+   The application will start on `http://127.0.0.1:5000` and `http://0.0.0.0:5000`
 
 ## 🎯 Usage
 
@@ -76,39 +97,62 @@ A comprehensive attendance management system that uses face recognition technolo
 ## 📁 Project Structure
 
 ```
-attendance-system/
+AMS/
 │
-├── app.py                 # Main Flask application
+├── app.py                 # Main Flask application with camera capture logic
 ├── requirements.txt       # Python dependencies
 ├── README.md             # Project documentation
+├── .gitignore            # Git ignore file
 │
 ├── templates/            # HTML templates
-│   ├── index.html        # Home page
+│   ├── index.html        # Home page with navigation
 │   ├── register.html     # Student registration page
 │   ├── attendance.html   # Mark attendance page
 │   └── view_attendance.html  # View records page
 │
 ├── known_faces/          # Stored face images (auto-created)
+│   └── {student_id}/     # Individual student directories
+│       └── {student_id}.jpg  # Sample face image
+│
 ├── attendance/           # Attendance records (auto-created)
+│   └── YYYY-MM-DD.json  # Daily attendance files
+│
 └── face_encodings.pkl    # Face encoding database (auto-created)
 ```
 
+### Key Functions in app.py:
+- `find_available_camera()`: Auto-detects available camera indices
+- `capture_image_from_camera()`: Robust camera capture with retry logic
+- `load_face_encodings()`: Loads stored face encodings from pickle file
+- `save_face_encodings()`: Saves face encodings to pickle file
+
 ## 🔧 How It Works
 
-1. **Face Registration**:
-   - When a student is registered, the system captures their face
-   - Uses face_recognition library to generate a 128-dimensional face encoding
-   - Stores the encoding along with student information
+1. **Camera Detection & Capture**:
+   - System automatically detects available cameras (tries indices 0, 1, 2)
+   - Uses retry logic (3 attempts) to handle temporary camera locks
+   - Properly initializes camera with optimal settings (640x480)
+   - Reads multiple frames to ensure camera is warmed up and stable
+   - Frontend properly releases camera before backend access to avoid conflicts
 
-2. **Face Recognition**:
+2. **Face Registration**:
+   - When a student is registered, the system captures their face using OpenCV
+   - Uses face_recognition library to generate a 128-dimensional face encoding
+   - Validates that exactly one face is detected
+   - Stores the encoding along with student information in `face_encodings.pkl`
+   - Saves a sample image in `known_faces/{student_id}/` directory
+
+3. **Face Recognition**:
    - When marking attendance, the system captures a new image
    - Generates face encodings for detected faces
    - Compares new encodings with stored encodings using Euclidean distance
-   - If a match is found (within tolerance), attendance is marked
+   - Uses tolerance of 0.6 for matching
+   - If a match is found, attendance is marked
 
-3. **Attendance Storage**:
-   - Attendance records are stored as JSON files, one per day
+4. **Attendance Storage**:
+   - Attendance records are stored as JSON files, one per day in `attendance/` directory
    - Each record includes student ID, name, timestamp, and status
+   - Prevents duplicate entries for the same student on the same day
 
 ## 🎓 Highlights
 
@@ -119,11 +163,14 @@ attendance-system/
 
 ## ⚠️ Important Notes
 
-- Ensure good lighting when capturing faces
-- Face should be clearly visible and front-facing
-- Only one face should be in frame during registration
-- The system works best with consistent lighting conditions
-- First-time face recognition may take a moment to process
+- **Camera Access**: The system automatically detects and uses available cameras. If you have multiple cameras, it will try indices 0, 1, and 2.
+- **Lighting**: Ensure good lighting when capturing faces for best results
+- **Face Position**: Face should be clearly visible and front-facing
+- **Single Face**: Only one face should be in frame during registration
+- **Consistent Conditions**: The system works best with consistent lighting conditions
+- **Processing Time**: First-time face recognition may take a moment to process
+- **Camera Conflicts**: If camera is in use by another app, the system will retry automatically (up to 3 times)
+- **Face Recognition Module**: The app runs without face_recognition installed, but face recognition features will show error messages until installed
 
 ## 🔒 Privacy & Security
 
@@ -134,20 +181,53 @@ attendance-system/
 
 ## 🐛 Troubleshooting
 
-**Issue**: Camera not working
-- Ensure your camera is not being used by another application
-- Check browser permissions for camera access
-- Try refreshing the page
+### **Issue**: Camera not working / "Failed to capture image"
 
-**Issue**: Face not recognized
-- Ensure good lighting
-- Make sure the face is clearly visible
+**Solutions:**
+- The system automatically retries (3 attempts), so wait a moment
+- Ensure your camera is not being used by another application (close other apps using camera)
+- Check browser permissions for camera access (allow camera access when prompted)
+- The system auto-detects cameras - if you have multiple cameras, it tries indices 0, 1, 2 automatically
+- Try refreshing the page and allowing camera access again
+- On Windows, ensure no other application has exclusive camera access
+- Check Windows Camera privacy settings: Settings → Privacy → Camera → Allow apps to access your camera
+
+### **Issue**: Face not recognized
+
+**Solutions:**
+- Ensure good lighting conditions
+- Make sure the face is clearly visible and front-facing
 - Try registering again with better lighting/angle
+- Ensure only one face is in the frame
+- The system uses a tolerance of 0.6 - very different angles or lighting may affect recognition
 
-**Issue**: Installation errors
-- Make sure you have Python 3.8+
-- Try upgrading pip: `pip install --upgrade pip`
-- For Windows, you may need Visual C++ Build Tools for face-recognition
+### **Issue**: Installation errors / face-recognition module
+
+**Solutions:**
+- Make sure you have Python 3.8+ (Python 3.13 may have compatibility issues with pre-built wheels)
+- Try upgrading pip: `pip install --upgrade pip setuptools wheel`
+- **For Windows - Installing face-recognition:**
+  1. Install CMake from [cmake.org](https://cmake.org/download/) - **IMPORTANT**: Check "Add CMake to system PATH" during installation
+  2. Install Visual Studio Build Tools from [Visual Studio](https://visualstudio.microsoft.com/visual-cpp-build-tools/) - Select "Desktop development with C++" workload
+  3. **Restart your terminal/IDE** after installing both
+  4. Verify CMake: `cmake --version` (should show version)
+  5. Then install: `pip install face-recognition`
+- **Note**: The app works without face-recognition installed, but face recognition features will be disabled
+
+### **Issue**: "No module named 'face_recognition'"
+
+**Solutions:**
+- This is expected if face-recognition is not installed
+- The app will still run, but face recognition features will show error messages
+- Follow the installation steps above to install face-recognition
+- See the "Installation" section for detailed CMake and Visual Studio Build Tools requirements
+
+### **Issue**: Camera index errors
+
+**Solutions:**
+- The system now auto-detects cameras automatically
+- If you have multiple cameras, it tries indices 0, 1, 2 in order
+- No manual configuration needed
 
 ## 📝 License
 
@@ -161,8 +241,19 @@ This project was created as a demonstration of:
 - Computer vision and face recognition
 - RESTful API design
 - Modern web UI/UX
+- Robust error handling and retry mechanisms
+- Camera access management and conflict resolution
+
+## 🔄 Recent Improvements
+
+- **Smart Camera Detection**: Automatic camera index detection (0, 1, 2)
+- **Retry Logic**: 3-attempt retry mechanism for camera access
+- **Better Error Handling**: Clear, descriptive error messages
+- **Camera Warm-up**: Reads multiple frames to ensure stable capture
+- **Frontend-Backend Coordination**: Proper camera release sequence to avoid conflicts
+- **Graceful Degradation**: App runs without face_recognition module
+- **Improved Camera Initialization**: Sets optimal resolution and allows proper warm-up time
 
 ---
 
 **Built with ❤️ using Python, OpenCV, Flask, and Machine Learning**
-
